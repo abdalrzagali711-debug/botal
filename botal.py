@@ -6,91 +6,67 @@ from threading import Thread
 import os
 
 # --- 1. إعداد الذكاء الاصطناعي (Gemini) ---
-# المفتاح الذي استخرجته أنت سابقاً
+# المفتاح الذي حصلت عليه بنجاح
 API_KEY = "AIzaSyBVbGGk_ircxLzq61ShCsHZN_CeKSGgP9s"
 genai.configure(api_key=API_KEY)
-model = genai.GenerativeModel('gemini-pro')
+
+# استخدام الإصدار الأحدث المستقر من النموذج
+model = genai.GenerativeModel('gemini-1.5-flash') 
 
 # --- 2. إعداد البوت ---
-# ضع هنا التوكن الجديد الذي حصلت عليه من BotFather
-TOKEN = "8313424329:AAF4K5FgAM8rNJsUFMNSWUTWG1Mcwns-dro"
+TOKEN = "8313424329:AAF4K5FgAM8rNJsUFMNSWUTWG1Mcwns-dro" 
 bot = telebot.TeleBot(TOKEN)
+ADMIN_ID = 5524416062 # ضع رقم الآيدي الخاص بك هنا
 
-# ضع هنا رقم الآيدي الخاص بك (ID) ليظهر لك زر التحكم
-ADMIN_ID = 5524416062 
-
-# ملف لتخزين آيدي المستخدمين
+# ملف تخزين المستخدمين
 USER_FILE = "users_list.txt"
 
-def add_to_db(uid):
-    if not os.path.exists(USER_FILE): open(USER_FILE, 'w').close()
-    with open(USER_FILE, 'r') as f:
-        users = f.read().splitlines()
-    if str(uid) not in users:
-        with open(USER_FILE, 'a') as f:
-            f.write(str(uid) + "\n")
+def add_user(uid):
+    if not os.path.exists(USER_FILE): open(USER_FILE, "w").close()
+    with open(USER_FILE, "r") as f:
+        if str(uid) not in f.read().splitlines():
+            with open(USER_FILE, "a") as fa: fa.write(str(uid) + "\n")
 
-# --- 3. سيرفر Flask (رابط الحياة لـ Render) ---
+# --- 3. سيرفر الويب (للبقاء حياً على Render) ---
 app = Flask('')
-
 @app.route('/')
-def home():
-    return "AI Bot (botal.py) is Online!"
+def home(): return "Botal AI is Live!"
 
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
+def run():
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
 
-def keep_alive():
-    t = Thread(target=run_flask, daemon=True)
-    t.start()
-
-# --- 4. الأزرار ---
-def get_keyboard(uid):
-    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    markup.add(types.KeyboardButton("💬 ابدأ الدردشة"))
-    if uid == ADMIN_ID:
-        markup.add(types.KeyboardButton("📊 عدد المستخدمين"))
-    return markup
-
-# --- 5. استقبال الرسائل ---
+# --- 4. معالجة الرسائل ---
 @bot.message_handler(commands=['start'])
-def welcome(message):
-    add_to_db(message.from_user.id)
-    bot.send_message(
-        message.chat.id, 
-        "🤖 أهلاً بك في بوت الذكاء الاصطناعي الحديث!\nاسألني أي سؤال وسأجيبك فوراً.",
-        reply_markup=get_keyboard(message.from_user.id)
-    )
+def start(message):
+    add_user(message.from_user.id)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("💬 ابدأ الدردشة")
+    if message.from_user.id == ADMIN_ID: markup.add("📊 عدد المستخدمين")
+    bot.send_message(message.chat.id, "🤖 مرحباً بك! أنا الآن جاهز للدردشة بالذكاء الاصطناعي.", reply_markup=markup)
 
 @bot.message_handler(func=lambda m: m.text == "📊 عدد المستخدمين")
-def show_users(message):
+def stats(message):
     if message.from_user.id == ADMIN_ID:
-        if os.path.exists(USER_FILE):
-            with open(USER_FILE, 'r') as f:
-                count = len(f.read().splitlines())
-            bot.send_message(message.chat.id, f"👥 عدد مستخدمي البوت الحالي: {count}")
+        with open(USER_FILE, "r") as f: count = len(f.read().splitlines())
+        bot.send_message(message.chat.id, f"👥 عدد المستخدمين: {count}")
 
-@bot.message_handler(func=lambda m: m.text == "💬 ابدأ الدردشة")
-def chat_info(message):
-    bot.send_message(message.chat.id, "أنا أسمعك الآن، أرسل أي نص وسأرد عليك باستخدام الذكاء الاصطناعي.")
-
-@bot.message_handler(func=lambda message: True)
-def ai_logic(message):
-    # لا ترد بالذكاء الاصطناعي إذا ضغط المستخدم على الأزرار
-    if message.text in ["💬 ابدأ الدردشة", "📊 عدد المستخدمين"]:
+@bot.message_handler(func=lambda m: True)
+def chat_logic(message):
+    if message.text == "💬 ابدأ الدردشة":
+        bot.send_message(message.chat.id, "تفضل، اسألني أي شيء!")
         return
 
-    thinking_msg = bot.reply_to(message, "💬 جاري التفكير...")
+    wait_msg = bot.reply_to(message, "💬 جاري التحليل...")
     try:
+        # إرسال النص للذكاء الاصطناعي
         response = model.generate_content(message.text)
-        bot.edit_message_text(response.text, message.chat.id, thinking_msg.message_id)
+        bot.edit_message_text(response.text, message.chat.id, wait_msg.message_id)
     except Exception as e:
-        bot.edit_message_text("⚠️ عذراً، واجهت مشكلة في معالجة طلبك.", message.chat.id, thinking_msg.message_id)
+        print(f"Error: {e}")
+        bot.edit_message_text("❌ عذراً، واجهت مشكلة في الاتصال بمحرك الذكاء الاصطناعي. تأكد من إعدادات المفتاح.", message.chat.id, wait_msg.message_id)
 
-# --- 6. التشغيل النهائي ---
+# --- 5. التشغيل المتوازي ---
 if __name__ == "__main__":
-    keep_alive() # تشغيل السيرفر في الخلفية
-    bot.remove_webhook() # تنظيف الاتصالات القديمة لتجنب خطأ 409
-    print("Bot is starting via botal.py...")
-    bot.infinity_polling(skip_pending=True)
+    Thread(target=lambda: bot.infinity_polling(skip_pending=True)).start()
+    run()
