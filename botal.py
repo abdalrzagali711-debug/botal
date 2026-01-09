@@ -6,21 +6,23 @@ from threading import Thread
 import os
 
 # --- 1. إعداد الذكاء الاصطناعي (Gemini) ---
+# المفتاح الذي استخرجته أنت سابقاً
 API_KEY = "AIzaSyBVbGGk_ircxLzq61ShCsHZN_CeKSGgP9s"
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-# --- 2. إعداد البوت (تأكد من وضع التوكن الخاص بك) ---
+# --- 2. إعداد البوت ---
+# ضع هنا التوكن الجديد الذي حصلت عليه من BotFather
 TOKEN = "8313424329:AAF4K5FgAM8rNJsUFMNSWUTWG1Mcwns-dro"
 bot = telebot.TeleBot(TOKEN)
 
-# --- 3. إعدادات الأدمن (لوحة التحكم) ---
-# استبدل الرقم أدناه بالآيدي الخاص بك (الذي حصلت عليه من userinfobot)
-ADMIN_ID = 5524416062  
+# ضع هنا رقم الآيدي الخاص بك (ID) ليظهر لك زر التحكم
+ADMIN_ID = 5524416062 
 
-USER_FILE = "users.txt"
+# ملف لتخزين آيدي المستخدمين
+USER_FILE = "users_list.txt"
 
-def add_user(uid):
+def add_to_db(uid):
     if not os.path.exists(USER_FILE): open(USER_FILE, 'w').close()
     with open(USER_FILE, 'r') as f:
         users = f.read().splitlines()
@@ -28,65 +30,67 @@ def add_user(uid):
         with open(USER_FILE, 'a') as f:
             f.write(str(uid) + "\n")
 
-# --- 4. سيرفر Flask للبقاء حياً على Render ---
+# --- 3. سيرفر Flask (رابط الحياة لـ Render) ---
 app = Flask('')
-@app.route('/')
-def home(): return "AI Bot is Online!"
 
-def run():
+@app.route('/')
+def home():
+    return "AI Bot (botal.py) is Online!"
+
+def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
 def keep_alive():
-    t = Thread(target=run, daemon=True)
+    t = Thread(target=run_flask, daemon=True)
     t.start()
 
-# --- 5. نظام الأزرار ---
-def main_menu(uid):
+# --- 4. الأزرار ---
+def get_keyboard(uid):
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-    btn_chat = types.KeyboardButton("💬 ابدأ الدردشة")
-    markup.add(btn_chat)
+    markup.add(types.KeyboardButton("💬 ابدأ الدردشة"))
     if uid == ADMIN_ID:
-        btn_stats = types.KeyboardButton("📊 عدد المستخدمين")
-        markup.add(btn_stats)
+        markup.add(types.KeyboardButton("📊 عدد المستخدمين"))
     return markup
 
-# --- 6. الأوامر ومعالجة الرسائل ---
+# --- 5. استقبال الرسائل ---
 @bot.message_handler(commands=['start'])
-def start(message):
-    add_user(message.from_user.id)
-    bot.send_message(message.chat.id, "🤖 أهلاً بك في بوت الذكاء الاصطناعي BotTech AI\n\nاسألني عن أي شيء وسأجيبك فوراً!", 
-                     reply_markup=main_menu(message.from_user.id))
+def welcome(message):
+    add_to_db(message.from_user.id)
+    bot.send_message(
+        message.chat.id, 
+        "🤖 أهلاً بك في بوت الذكاء الاصطناعي الحديث!\nاسألني أي سؤال وسأجيبك فوراً.",
+        reply_markup=get_keyboard(message.from_user.id)
+    )
 
 @bot.message_handler(func=lambda m: m.text == "📊 عدد المستخدمين")
-def stats(message):
+def show_users(message):
     if message.from_user.id == ADMIN_ID:
         if os.path.exists(USER_FILE):
             with open(USER_FILE, 'r') as f:
                 count = len(f.read().splitlines())
-            bot.send_message(message.chat.id, f"👥 إجمالي عدد مستخدمي البوت: {count}")
-        else:
-            bot.send_message(message.chat.id, "👥 عدد المستخدمين: 0")
+            bot.send_message(message.chat.id, f"👥 عدد مستخدمي البوت الحالي: {count}")
 
 @bot.message_handler(func=lambda m: m.text == "💬 ابدأ الدردشة")
-def chat_start(message):
-    bot.send_message(message.chat.id, "تفضل، أنا أسمعك.. اكتب سؤالك الآن!")
+def chat_info(message):
+    bot.send_message(message.chat.id, "أنا أسمعك الآن، أرسل أي نص وسأرد عليك باستخدام الذكاء الاصطناعي.")
 
-@bot.message_handler(func=lambda m: True)
-def handle_ai(message):
-    # تجاهل الأزرار
-    if message.text in ["💬 ابدأ الدردشة", "📊 عدد المستخدمين"]: return
-    
-    thinking = bot.reply_to(message, "🤔 جاري التفكير...")
+@bot.message_handler(func=lambda message: True)
+def ai_logic(message):
+    # لا ترد بالذكاء الاصطناعي إذا ضغط المستخدم على الأزرار
+    if message.text in ["💬 ابدأ الدردشة", "📊 عدد المستخدمين"]:
+        return
+
+    thinking_msg = bot.reply_to(message, "💬 جاري التفكير...")
     try:
         response = model.generate_content(message.text)
-        bot.edit_message_text(response.text, message.chat.id, thinking.message_id)
+        bot.edit_message_text(response.text, message.chat.id, thinking_msg.message_id)
     except Exception as e:
-        bot.edit_message_text("❌ عذراً، لم أستطع معالجة طلبك حالياً.", message.chat.id, thinking.message_id)
+        bot.edit_message_text("⚠️ عذراً، واجهت مشكلة في معالجة طلبك.", message.chat.id, thinking_msg.message_id)
 
-# --- 7. التشغيل ---
+# --- 6. التشغيل النهائي ---
 if __name__ == "__main__":
-    keep_alive()
-    bot.remove_webhook()
-    print("AI Bot starting...")
+    keep_alive() # تشغيل السيرفر في الخلفية
+    bot.remove_webhook() # تنظيف الاتصالات القديمة لتجنب خطأ 409
+    print("Bot is starting via botal.py...")
     bot.infinity_polling(skip_pending=True)
